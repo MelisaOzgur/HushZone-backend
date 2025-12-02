@@ -8,23 +8,49 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type createReq struct {
+type Venue struct {
+	ID        string  `json:"id"`
 	Name      string  `json:"name"`
 	Address   string  `json:"address"`
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 }
 
+type CreateVenueReq struct {
+	Name      string  `json:"name"`
+	Address   string  `json:"address"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+func userIDFromCtx(c *gin.Context) (string, bool) {
+	// En çok kullanılan isimler:
+	if v, ok := c.Get("user_id"); ok {
+		if s, ok2 := v.(string); ok2 {
+			return s, true
+		}
+	}
+	if v, ok := c.Get("uid"); ok {
+		if s, ok2 := v.(string); ok2 {
+			return s, true
+		}
+	}
+	if v, ok := c.Get("userID"); ok {
+		if s, ok2 := v.(string); ok2 {
+			return s, true
+		}
+	}
+	return "", false
+}
+
 func List(db *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := context.Background()
-
-		rows, err := db.Query(ctx, `
-			SELECT id, name, address, latitude, longitude
-			FROM venues
-			ORDER BY created_at DESC
-			LIMIT 100
-		`)
+		rows, err := db.Query(context.Background(), `
+            SELECT id, name, address, latitude, longitude
+            FROM venues
+            ORDER BY created_at DESC
+            LIMIT 100
+        `)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
 			return
@@ -47,37 +73,35 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 
 func Create(db *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req createReq
-		if err := c.ShouldBindJSON(&req); err != nil {
+		var req CreateVenueReq
+		if err := c.BindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
 			return
 		}
-		if req.Name == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "name_required"})
+		if req.Name == "" || req.Address == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields"})
 			return
 		}
 
-		uidVal, ok := c.Get("userID")
+		userID, ok := userIDFromCtx(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
-		userID, _ := uidVal.(string)
 
-		ctx := context.Background()
-		var id string
-		err := db.QueryRow(ctx, `
-			INSERT INTO venues (name, address, latitude, longitude, created_by)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id
-		`, req.Name, req.Address, req.Latitude, req.Longitude, userID).Scan(&id)
+		var newID string
+		err := db.QueryRow(
+			context.Background(),
+			`INSERT INTO venues (user_id, name, address, latitude, longitude)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id`,
+			userID, req.Name, req.Address, req.Latitude, req.Longitude,
+		).Scan(&newID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_insert_error"})
 			return
 		}
 
-		c.JSON(http.StatusCreated, gin.H{
-			"id": id,
-		})
+		c.JSON(http.StatusCreated, gin.H{"id": newID})
 	}
 }
