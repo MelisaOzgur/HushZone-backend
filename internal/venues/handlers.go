@@ -8,34 +8,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func userIDFromContext(c *gin.Context) (string, bool) {
-	if v, ok := c.Get("uid"); ok {
-		if s, ok2 := v.(string); ok2 && s != "" {
-			return s, true
-		}
-	}
-	if v, ok := c.Get("user_id"); ok {
-		if s, ok2 := v.(string); ok2 && s != "" {
-			return s, true
-		}
-	}
-	return "", false
+type Venue struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Address   string  `json:"address"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
 }
 
 func List(db *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, ok := userIDFromContext(c); !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-
 		rows, err := db.Query(
 			context.Background(),
-			`SELECT id, owner_id, name, address, latitude, longitude,
-			        avg_noise, avg_wifi, avg_crowd, created_at
-			   FROM venues
-			   ORDER BY created_at DESC
-			   LIMIT 100`,
+			`SELECT id, name, address, latitude, longitude
+			 FROM venues
+			 ORDER BY created_at DESC
+			 LIMIT 100`,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
@@ -48,17 +36,12 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 			var v Venue
 			if err := rows.Scan(
 				&v.ID,
-				&v.OwnerID,
 				&v.Name,
 				&v.Address,
 				&v.Latitude,
 				&v.Longitude,
-				&v.AvgNoise,
-				&v.AvgWifi,
-				&v.AvgCrowd,
-				&v.CreatedAt,
 			); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "scan_error"})
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
 				return
 			}
 			out = append(out, v)
@@ -68,50 +51,41 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+type createReq struct {
+	Name      string  `json:"name"`
+	Address   string  `json:"address"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
 func Create(db *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		uid, ok := userIDFromContext(c)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-
-		var req CreateVenueReq
-		if err := c.BindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
-			return
-		}
-		if req.Name == "" || req.Address == "" {
+		var req createReq
+		if err := c.BindJSON(&req); err != nil ||
+			req.Name == "" || req.Address == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_payload"})
 			return
 		}
 
-		var created Venue
+		var id string
 		err := db.QueryRow(
 			context.Background(),
-			`INSERT INTO venues (owner_id, name, address, latitude, longitude)
-			 VALUES ($1,$2,$3,$4,$5)
-			 RETURNING id, owner_id, name, address, latitude, longitude,
-			           avg_noise, avg_wifi, avg_crowd, created_at`,
-			uid, req.Name, req.Address, req.Latitude, req.Longitude,
-		).Scan(
-			&created.ID,
-			&created.OwnerID,
-			&created.Name,
-			&created.Address,
-			&created.Latitude,
-			&created.Longitude,
-			&created.AvgNoise,
-			&created.AvgWifi,
-			&created.AvgCrowd,
-			&created.CreatedAt,
-		)
-
+			`INSERT INTO venues (name, address, latitude, longitude)
+			 VALUES ($1, $2, $3, $4)
+			 RETURNING id`,
+			req.Name, req.Address, req.Latitude, req.Longitude,
+		).Scan(&id)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
 			return
 		}
 
-		c.JSON(http.StatusCreated, created)
+		c.JSON(http.StatusCreated, gin.H{
+			"id":        id,
+			"name":      req.Name,
+			"address":   req.Address,
+			"latitude":  req.Latitude,
+			"longitude": req.Longitude,
+		})
 	}
 }
