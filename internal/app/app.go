@@ -40,7 +40,7 @@ func Router(d Deps) *gin.Engine {
 
 	api := r.Group("/v1")
 	api.Use(middleware.RequireAuth(d.AccessSecret))
-
+		
 	api.GET("/me", func(c *gin.Context) {
 		c.JSON(200, gin.H{"ok": true})
 	})
