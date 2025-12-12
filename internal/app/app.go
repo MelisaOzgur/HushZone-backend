@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"hushzone/internal/auth"
-	"hushzone/internal/measurements"
 	"hushzone/internal/middleware"
 	"hushzone/internal/venues"
 )
@@ -48,9 +47,6 @@ func Router(d Deps) *gin.Engine {
 
 	api.GET("/venues", venues.List(d.DB))
 	api.POST("/venues", venues.Create(d.DB))
-	api.POST("/venues/:id/ratings", venues.AddRating(d.DB))
-
-	api.POST("/measurements", measurements.Create(d.DB))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
