@@ -10,12 +10,16 @@ import (
 )
 
 type Venue struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Address   *string   `json:"address,omitempty"`
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Address     *string    `json:"address,omitempty"`
+	Latitude    float64    `json:"latitude"`
+	Longitude   float64    `json:"longitude"`
+	CreatedAt   time.Time  `json:"created_at"`
+	AvgNoise    *float64   `json:"avg_noise,omitempty"`
+	AvgWifi     *float64   `json:"avg_wifi,omitempty"`
+	AvgCrowd    *float64   `json:"avg_crowd,omitempty"`
+	SampleCount int64      `json:"sample_count"`
 }
 
 type createVenueReq struct {
@@ -31,9 +35,21 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 		defer cancel()
 
 		rows, err := db.Query(ctx, `
-			SELECT id, name, address, latitude, longitude, created_at
-			FROM venues
-			ORDER BY created_at DESC
+			SELECT
+			  v.id,
+			  v.name,
+			  v.address,
+			  v.latitude,
+			  v.longitude,
+			  v.created_at,
+			  AVG(m.noise_db) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS avg_noise,
+			  AVG(m.wifi_mbps) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS avg_wifi,
+			  AVG(m.crowd_level) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS avg_crowd,
+			  COUNT(m.id) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS sample_count
+			FROM venues v
+			LEFT JOIN measurements m ON m.venue_id = v.id
+			GROUP BY v.id
+			ORDER BY v.created_at DESC
 			LIMIT 100
 		`)
 		if err != nil {
@@ -45,7 +61,18 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 		out := make([]Venue, 0, 32)
 		for rows.Next() {
 			var v Venue
-			if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.Latitude, &v.Longitude, &v.CreatedAt); err != nil {
+			if err := rows.Scan(
+				&v.ID,
+				&v.Name,
+				&v.Address,
+				&v.Latitude,
+				&v.Longitude,
+				&v.CreatedAt,
+				&v.AvgNoise,
+				&v.AvgWifi,
+				&v.AvgCrowd,
+				&v.SampleCount,
+			); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error", "detail": err.Error()})
 				return
 			}
@@ -94,6 +121,11 @@ func Create(db *pgxpool.Pool) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error", "detail": err.Error()})
 			return
 		}
+
+		v.AvgNoise = nil
+		v.AvgWifi = nil
+		v.AvgCrowd = nil
+		v.SampleCount = 0
 
 		c.JSON(http.StatusCreated, v)
 	}
