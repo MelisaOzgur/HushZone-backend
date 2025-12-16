@@ -21,21 +21,20 @@ type Deps struct {
 }
 
 func Router(d Deps) *gin.Engine {
-	r := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+
+	r := gin.New()
+	r.Use(gin.Recovery())
 	_ = r.SetTrustedProxies(nil)
 
 	r.POST("/v1/auth/signup",
 		auth.SignUp(d.DB, d.AccessSecret, d.RefreshSecret, d.AccessTTL, d.RefreshTTL))
-
 	r.POST("/v1/auth/signin",
 		auth.SignIn(d.DB, d.AccessSecret, d.RefreshSecret, d.AccessTTL, d.RefreshTTL))
-
 	r.POST("/v1/auth/refresh",
 		auth.Refresh(d.DB, d.AccessSecret, d.RefreshSecret, d.AccessTTL, d.RefreshTTL))
-
 	r.POST("/v1/auth/logout",
 		auth.Logout(d.DB))
-
 	r.POST("/v1/auth/google",
 		auth.GoogleSignIn(d.DB, d.AccessSecret, d.RefreshSecret, d.AccessTTL, d.RefreshTTL))
 

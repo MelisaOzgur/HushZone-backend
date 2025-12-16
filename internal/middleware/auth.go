@@ -22,23 +22,30 @@ func RequireAuth(secret string) gin.HandlerFunc {
 		}
 
 		tokenStr := strings.TrimPrefix(h, "Bearer ")
+		cl := &claims{}
 
-		token, err := jwt.ParseWithClaims(tokenStr, &claims{}, func(t *jwt.Token) (interface{}, error) {
-			return []byte(secret), nil
-		})
-		if err != nil || !token.Valid {
+		token, err := jwt.ParseWithClaims(
+			tokenStr,
+			cl,
+			func(t *jwt.Token) (interface{}, error) {
+				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, jwt.ErrTokenUnverifiable
+				}
+				return []byte(secret), nil
+			},
+			jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		)
+		if err != nil || token == nil || !token.Valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
 
-		cl, ok := token.Claims.(*claims)
-		if !ok || cl.UID == "" {
+		if cl.UID == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
 
 		c.Set("userID", cl.UID)
-
 		c.Next()
 	}
 }

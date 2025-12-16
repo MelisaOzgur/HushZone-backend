@@ -42,12 +42,14 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 			  v.latitude,
 			  v.longitude,
 			  v.created_at,
-			  AVG(m.noise_db) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS avg_noise,
-			  AVG(m.wifi_mbps) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS avg_wifi,
-			  AVG(m.crowd_level) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS avg_crowd,
-			  COUNT(m.id) FILTER (WHERE m.created_at >= now() - interval '30 minutes') AS sample_count
+			  AVG(m.noise_db) AS avg_noise,
+			  AVG(m.wifi_mbps) AS avg_wifi,
+			  AVG(m.crowd_level) AS avg_crowd,
+			  COUNT(m.id) AS sample_count
 			FROM venues v
-			LEFT JOIN measurements m ON m.venue_id = v.id
+			LEFT JOIN measurements m
+			  ON m.venue_id = v.id
+			 AND m.created_at >= now() - interval '30 minutes'
 			GROUP BY v.id
 			ORDER BY v.created_at DESC
 			LIMIT 100
