@@ -9,6 +9,7 @@ import (
 	"hushzone/internal/auth"
 	"hushzone/internal/measurements"
 	"hushzone/internal/middleware"
+	"hushzone/internal/speedtest"
 	"hushzone/internal/venues"
 )
 
@@ -37,6 +38,8 @@ func Router(d Deps) *gin.Engine {
 		auth.Logout(d.DB))
 	r.POST("/v1/auth/google",
 		auth.GoogleSignIn(d.DB, d.AccessSecret, d.RefreshSecret, d.AccessTTL, d.RefreshTTL))
+
+	r.GET("/v1/speedtest", speedtest.Handle)
 
 	api := r.Group("/v1")
 	api.Use(middleware.RequireAuth(d.AccessSecret))
