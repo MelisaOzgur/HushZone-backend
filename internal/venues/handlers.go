@@ -125,13 +125,19 @@ func Create(db *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
+		req.Name = strings.TrimSpace(req.Name)
+		if req.Name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
 
 		var v Venue
 		err := db.QueryRow(ctx, `
-			INSERT INTO venues (user_id, name, address, latitude, longitude, source)
-			VALUES ($1, $2, $3, $4, $5, 'user')
+			INSERT INTO venues (user_id, name, address, latitude, longitude, source, updated_at)
+			VALUES ($1, $2, $3, $4, $5, 'user', now())
 			RETURNING id, name, address, latitude, longitude, created_at, source, apple_place_id
 		`, userID, req.Name, req.Address, req.Latitude, req.Longitude).Scan(
 			&v.ID, &v.Name, &v.Address, &v.Latitude, &v.Longitude, &v.CreatedAt, &v.Source, &v.ApplePlaceID,
@@ -141,17 +147,24 @@ func Create(db *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		v.AvgNoise = nil
-		v.AvgWifi = nil
-		v.AvgCrowd = nil
-		v.SampleCount = 0
-
+		fillVenueStats(ctx, db, &v)
 		c.JSON(http.StatusCreated, v)
 	}
 }
 
 func Ensure(db *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		uidVal, ok := c.Get("userID")
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		userID, ok := uidVal.(string)
+		if !ok || userID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+
 		var req ensureVenueReq
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
@@ -173,8 +186,8 @@ func Ensure(db *pgxpool.Pool) gin.HandlerFunc {
 			appleID := strings.TrimSpace(*req.ApplePlaceID)
 
 			err := db.QueryRow(ctx, `
-				INSERT INTO venues (user_id, name, address, latitude, longitude, source, apple_place_id)
-				VALUES (NULL, $1, $2, $3, $4, 'apple', $5)
+				INSERT INTO venues (user_id, name, address, latitude, longitude, source, apple_place_id, updated_at)
+				VALUES ($1, $2, $3, $4, $5, 'apple', $6, now())
 				ON CONFLICT (apple_place_id)
 				DO UPDATE SET
 					name = EXCLUDED.name,
@@ -183,7 +196,7 @@ func Ensure(db *pgxpool.Pool) gin.HandlerFunc {
 					longitude = EXCLUDED.longitude,
 					updated_at = now()
 				RETURNING id, name, address, latitude, longitude, created_at, source, apple_place_id
-			`, req.Name, req.Address, req.Latitude, req.Longitude, appleID).Scan(
+			`, userID, req.Name, req.Address, req.Latitude, req.Longitude, appleID).Scan(
 				&v.ID, &v.Name, &v.Address, &v.Latitude, &v.Longitude, &v.CreatedAt, &v.Source, &v.ApplePlaceID,
 			)
 			if err != nil {
@@ -196,37 +209,7 @@ func Ensure(db *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		err := db.QueryRow(ctx, `
-			INSERT INTO venues (user_id, name, address, latitude, longitude, source)
-			VALUES (NULL, $1, $2, $3, $4, 'apple')
-			ON CONFLICT DO NOTHING
-			RETURNING id, name, address, latitude, longitude, created_at, source, apple_place_id
-		`, req.Name, req.Address, req.Latitude, req.Longitude).Scan(
-			&v.ID, &v.Name, &v.Address, &v.Latitude, &v.Longitude, &v.CreatedAt, &v.Source, &v.ApplePlaceID,
-		)
-
-		if err != nil {
-			err2 := db.QueryRow(ctx, `
-				SELECT id, name, address, latitude, longitude, created_at, source, apple_place_id
-				FROM venues
-				WHERE source='apple'
-				  AND apple_place_id IS NULL
-				  AND lower(name)=lower($1)
-				  AND round(latitude::numeric, 5)=round($3::numeric, 5)
-				  AND round(longitude::numeric, 5)=round($4::numeric, 5)
-				ORDER BY created_at DESC
-				LIMIT 1
-			`, req.Name, req.Address, req.Latitude, req.Longitude).Scan(
-				&v.ID, &v.Name, &v.Address, &v.Latitude, &v.Longitude, &v.CreatedAt, &v.Source, &v.ApplePlaceID,
-			)
-			if err2 != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error", "detail": err2.Error()})
-				return
-			}
-		}
-
-		fillVenueStats(ctx, db, &v)
-		c.JSON(http.StatusOK, v)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apple_place_id_required"})
 	}
 }
 
