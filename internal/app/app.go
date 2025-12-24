@@ -50,6 +50,7 @@ func Router(d Deps) *gin.Engine {
 
 	api.GET("/venues", venues.List(d.DB))
 	api.POST("/venues", venues.Create(d.DB))
+	api.POST("/venues/ensure", venues.Ensure(d.DB))
 
 	api.POST("/measurements", measurements.Create(d.DB))
 
