@@ -4,27 +4,23 @@ import (
 	"crypto/rand"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func Handle(c *gin.Context) {
 	const (
-		defaultBytes = int64(8_000_000)
-		minBytes     = int64(1_000)
-		maxBytes     = int64(50_000_000)
-		chunkSize    = 32 * 1024
+		defaultBytes = int64(25_000_000) 
+		minBytes     = int64(1_000_000)  
+		maxBytes     = int64(120_000_000) 
+		chunkSize    = 256 * 1024        
 	)
 
 	n := defaultBytes
 	if s := c.Query("bytes"); s != "" {
-		v, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_bytes"})
-			return
+		if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+			n = v
 		}
-		n = v
 	}
 
 	if n < minBytes {
@@ -36,8 +32,7 @@ func Handle(c *gin.Context) {
 
 	w := c.Writer
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
@@ -46,8 +41,6 @@ func Handle(c *gin.Context) {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
-
-	flusher.Flush()
 
 	buf := make([]byte, chunkSize)
 	var sent int64 = 0
@@ -61,14 +54,11 @@ func Handle(c *gin.Context) {
 
 		_, _ = rand.Read(buf[:toWrite])
 
-		_, err := w.Write(buf[:toWrite])
-		if err != nil {
+		if _, err := w.Write(buf[:toWrite]); err != nil {
 			return
 		}
 
 		sent += toWrite
 		flusher.Flush()
-
-		time.Sleep(2 * time.Millisecond)
 	}
 }
