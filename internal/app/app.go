@@ -39,7 +39,8 @@ func Router(d Deps) *gin.Engine {
 	r.POST("/v1/auth/google",
 		auth.GoogleSignIn(d.DB, d.AccessSecret, d.RefreshSecret, d.AccessTTL, d.RefreshTTL))
 
-	r.GET("/v1/speedtest", speedtest.Handle)
+	r.GET("/v1/speedtest", speedtest.HandleDownload)
+	r.POST("/v1/speedtest/upload", speedtest.HandleUpload)
 
 	api := r.Group("/v1")
 	api.Use(middleware.RequireAuth(d.AccessSecret))
@@ -54,6 +55,7 @@ func Router(d Deps) *gin.Engine {
 
 	api.POST("/measurements", measurements.Create(d.DB))
 
+	// Health (public)
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
