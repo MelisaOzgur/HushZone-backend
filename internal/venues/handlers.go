@@ -11,17 +11,18 @@ import (
 )
 
 type Venue struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Address     *string   `json:"address,omitempty"`
-	Latitude    float64   `json:"latitude"`
-	Longitude   float64   `json:"longitude"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Address   *string   `json:"address,omitempty"`
+	Latitude  float64   `json:"latitude"`
+	Longitude float64   `json:"longitude"`
+	CreatedAt time.Time `json:"created_at"`
 
-	AvgNoise    *float64 `json:"avg_noise,omitempty"`
-	AvgWifi     *float64 `json:"avg_wifi,omitempty"`
-	AvgCrowd    *float64 `json:"avg_crowd,omitempty"`
-	SampleCount int64    `json:"sample_count"`
+	AvgNoise        *float64 `json:"avg_noise,omitempty"`
+	AvgWifiDownload *float64 `json:"avg_wifi_download,omitempty"`
+	AvgWifiUpload   *float64 `json:"avg_wifi_upload,omitempty"`
+	AvgCrowd        *float64 `json:"avg_crowd,omitempty"`
+	SampleCount     int64    `json:"sample_count"`
 
 	Source       string  `json:"source"`
 	ApplePlaceID *string `json:"apple_place_id,omitempty"`
@@ -58,7 +59,8 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 			  v.source,
 			  v.apple_place_id,
 			  AVG(m.noise_db) AS avg_noise,
-			  AVG(COALESCE(m.wifi_download_mbps, m.wifi_mbps)) AS avg_wifi,
+			  AVG(COALESCE(m.wifi_download_mbps, m.wifi_mbps)) AS avg_wifi_download,
+			  AVG(m.wifi_upload_mbps) AS avg_wifi_upload,
 			  AVG(m.crowd_level) AS avg_crowd,
 			  COUNT(m.id) AS sample_count
 			FROM venues v
@@ -88,7 +90,8 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 				&v.Source,
 				&v.ApplePlaceID,
 				&v.AvgNoise,
-				&v.AvgWifi,
+				&v.AvgWifiDownload,
+				&v.AvgWifiUpload,
 				&v.AvgCrowd,
 				&v.SampleCount,
 			); err != nil {
@@ -214,22 +217,24 @@ func Ensure(db *pgxpool.Pool) gin.HandlerFunc {
 }
 
 func fillVenueStats(ctx context.Context, db *pgxpool.Pool, v *Venue) {
-	var avgNoise, avgWifi, avgCrowd *float64
+	var avgNoise, avgWifiDL, avgWifiUL, avgCrowd *float64
 	var n int64
 
 	_ = db.QueryRow(ctx, `
 		SELECT
 		  AVG(m.noise_db) AS avg_noise,
-		  AVG(COALESCE(m.wifi_download_mbps, m.wifi_mbps)) AS avg_wifi,
+		  AVG(COALESCE(m.wifi_download_mbps, m.wifi_mbps)) AS avg_wifi_download,
+		  AVG(m.wifi_upload_mbps) AS avg_wifi_upload,
 		  AVG(m.crowd_level) AS avg_crowd,
 		  COUNT(m.id) AS sample_count
 		FROM measurements m
 		WHERE m.venue_id = $1
 		  AND m.created_at >= now() - interval '30 minutes'
-	`, v.ID).Scan(&avgNoise, &avgWifi, &avgCrowd, &n)
+	`, v.ID).Scan(&avgNoise, &avgWifiDL, &avgWifiUL, &avgCrowd, &n)
 
 	v.AvgNoise = avgNoise
-	v.AvgWifi = avgWifi
+	v.AvgWifiDownload = avgWifiDL
+	v.AvgWifiUpload = avgWifiUL
 	v.AvgCrowd = avgCrowd
 	v.SampleCount = n
 }
