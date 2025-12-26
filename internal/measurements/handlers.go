@@ -12,24 +12,32 @@ import (
 type createReq struct {
 	VenueID          string   `json:"venue_id" binding:"required"`
 	NoiseDB          *float64 `json:"noise_db"`
-	WifiMbps         *float64 `json:"wifi_mbps"`
+
+	WifiMbps *float64 `json:"wifi_mbps"`
+
 	WifiDownloadMbps *float64 `json:"wifi_download_mbps"`
 	WifiUploadMbps   *float64 `json:"wifi_upload_mbps"`
-	CrowdLevel       *int     `json:"crowd_level"`
-	Note             *string  `json:"note"`
+
+	CrowdLevel *int    `json:"crowd_level"`
+	Note       *string `json:"note"`
 }
 
 type Measurement struct {
-	ID               string    `json:"id"`
-	UserID           string    `json:"user_id"`
-	VenueID          string    `json:"venue_id"`
-	NoiseDB          *float64  `json:"noise_db,omitempty"`
-	WifiMbps         *float64  `json:"wifi_mbps,omitempty"`
-	WifiDownloadMbps *float64  `json:"wifi_download_mbps,omitempty"`
-	WifiUploadMbps   *float64  `json:"wifi_upload_mbps,omitempty"`
-	CrowdLevel       *int      `json:"crowd_level,omitempty"`
-	Note             *string   `json:"note,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID      string `json:"id"`
+	UserID  string `json:"user_id"`
+	VenueID string `json:"venue_id"`
+
+	NoiseDB *float64 `json:"noise_db,omitempty"`
+
+	WifiMbps *float64 `json:"wifi_mbps,omitempty"`
+
+	WifiDownloadMbps *float64 `json:"wifi_download_mbps,omitempty"`
+	WifiUploadMbps   *float64 `json:"wifi_upload_mbps,omitempty"`
+
+	CrowdLevel *int    `json:"crowd_level,omitempty"`
+	Note       *string `json:"note,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func Create(db *pgxpool.Pool) gin.HandlerFunc {
@@ -52,12 +60,18 @@ func Create(db *pgxpool.Pool) gin.HandlerFunc {
 		}
 
 		var legacyWifi *float64
-		if req.WifiMbps != nil {
+		switch {
+		case req.WifiMbps != nil:
 			legacyWifi = req.WifiMbps
-		} else if req.WifiDownloadMbps != nil {
+			if req.WifiDownloadMbps == nil {
+				req.WifiDownloadMbps = req.WifiMbps
+			}
+		case req.WifiDownloadMbps != nil:
 			legacyWifi = req.WifiDownloadMbps
-		} else if req.WifiUploadMbps != nil {
+		case req.WifiUploadMbps != nil:
 			legacyWifi = req.WifiUploadMbps
+		default:
+			legacyWifi = nil
 		}
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
@@ -66,13 +80,47 @@ func Create(db *pgxpool.Pool) gin.HandlerFunc {
 		var m Measurement
 		err := db.QueryRow(ctx, `
 			INSERT INTO measurements (
-				user_id, venue_id, noise_db, wifi_mbps, wifi_download_mbps, wifi_upload_mbps, crowd_level, note
+				user_id,
+				venue_id,
+				noise_db,
+				wifi_mbps,
+				wifi_download_mbps,
+				wifi_upload_mbps,
+				crowd_level,
+				note
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 			RETURNING
-				id, user_id, venue_id, noise_db, wifi_mbps, wifi_download_mbps, wifi_upload_mbps, crowd_level, note, created_at
-		`, userID, req.VenueID, req.NoiseDB, legacyWifi, req.WifiDownloadMbps, req.WifiUploadMbps, req.CrowdLevel, req.Note).Scan(
-			&m.ID, &m.UserID, &m.VenueID, &m.NoiseDB, &m.WifiMbps, &m.WifiDownloadMbps, &m.WifiUploadMbps, &m.CrowdLevel, &m.Note, &m.CreatedAt,
+				id,
+				user_id,
+				venue_id,
+				noise_db,
+				wifi_mbps,
+				wifi_download_mbps,
+				wifi_upload_mbps,
+				crowd_level,
+				note,
+				created_at
+		`,
+			userID,
+			req.VenueID,
+			req.NoiseDB,
+			legacyWifi,
+			req.WifiDownloadMbps,
+			req.WifiUploadMbps,
+			req.CrowdLevel,
+			req.Note,
+		).Scan(
+			&m.ID,
+			&m.UserID,
+			&m.VenueID,
+			&m.NoiseDB,
+			&m.WifiMbps,
+			&m.WifiDownloadMbps,
+			&m.WifiUploadMbps,
+			&m.CrowdLevel,
+			&m.Note,
+			&m.CreatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error", "detail": err.Error()})
