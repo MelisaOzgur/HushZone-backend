@@ -58,7 +58,7 @@ func List(db *pgxpool.Pool) gin.HandlerFunc {
 			  v.source,
 			  v.apple_place_id,
 			  AVG(m.noise_db) AS avg_noise,
-			  AVG(m.wifi_mbps) AS avg_wifi,
+			  AVG(COALESCE(m.wifi_download_mbps, m.wifi_mbps)) AS avg_wifi,
 			  AVG(m.crowd_level) AS avg_crowd,
 			  COUNT(m.id) AS sample_count
 			FROM venues v
@@ -220,7 +220,7 @@ func fillVenueStats(ctx context.Context, db *pgxpool.Pool, v *Venue) {
 	_ = db.QueryRow(ctx, `
 		SELECT
 		  AVG(m.noise_db) AS avg_noise,
-		  AVG(m.wifi_mbps) AS avg_wifi,
+		  AVG(COALESCE(m.wifi_download_mbps, m.wifi_mbps)) AS avg_wifi,
 		  AVG(m.crowd_level) AS avg_crowd,
 		  COUNT(m.id) AS sample_count
 		FROM measurements m
